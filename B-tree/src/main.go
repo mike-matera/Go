@@ -41,8 +41,8 @@ func doTest(tree *btree.Btree, count int, generate func(int, *btree.Btree), chec
 }
 
 func main() {
-	tree := new (btree.Btree)
-	
+
+	tree := new (btree.Btree)	
 	n := 500000
 	fmt.Print("[test] Linear insertion ", n, " elements\n")
 	doTest(tree, n, 
@@ -53,6 +53,8 @@ func main() {
 			return (current == last + 1)
 		})
 
+	tree = new (btree.Btree)	
+	n = 500000
 	fmt.Print("[test] Random insertion ", n, " elements\n")
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	doTest(tree, n, 
