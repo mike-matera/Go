@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"time"
 	"btree"
+	"runtime"
 )
 
 func doBasicTest(count int, 
@@ -117,19 +118,33 @@ type Result struct {
 
 func main() {
 	results := make (map[int] map[int] Result)
+	runcount := int32(1)
 
-	for _,order := range([] int{4, 8, 16, 32, 64}) {
-		results[order] = make (map[int] Result)
-		for count := 500000; count <= 3000000; count += 500000 {
-			var r Result
-			r.InsertionRate, r.IterationRate, r.FetchRate = perftest(count,order)
-			results[order][count] = r
+	for run := int32(0); run < runcount; run++ {
+		for _,order := range([] int{16}) {
+
+			_, okay := results[order]
+			if ! okay {
+				results[order] = make (map[int] Result)
+			}
+			for count := 500000; count <= 500000; count += 500000 {
+				var r Result
+				r.InsertionRate, r.IterationRate, r.FetchRate = perftest(count,order)
+				re := results[order][count]
+				re.InsertionRate += r.InsertionRate
+				re.IterationRate += r.IterationRate
+				re.FetchRate += r.FetchRate
+				results[order][count] = re
+				runtime.GC()
+			}
 		}
 	}
-
+	
 	for order,m := range( results ) {
 		for count, result := range ( m ) {
-			fmt.Print(order, ",", count, ",", result.InsertionRate, ",", result.FetchRate, ",", result.IterationRate, "\n")			
+			fmt.Print(order, ",", count, ",", (result.InsertionRate/runcount), 
+				",", (result.FetchRate/runcount), 
+				",", (result.IterationRate/runcount), "\n")			
 		}
 	}
 }
