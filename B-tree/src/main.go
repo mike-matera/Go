@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-	"btree"
+	"lifealgorithmic.com/btree"
 	"runtime"
 )
 
@@ -127,7 +127,7 @@ func main() {
 			if ! okay {
 				results[order] = make (map[int] Result)
 			}
-			for count := 500000; count <= 500000; count += 500000 {
+			for count := 1000000; count <= 1000000; count += 500000 {
 				var r Result
 				r.InsertionRate, r.IterationRate, r.FetchRate = perftest(count,order)
 				re := results[order][count]
