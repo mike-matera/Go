@@ -1,204 +1,133 @@
 package btree
 
 import (
-    "testing"
+ 	"testing"
 	"math/rand"
 	"time"
-	"fmt"
+	"runtime"
+//	"fmt"
 )
 
-type TreeTest interface {
-	Insert (int)
-	Delete (int)
-	Channel () (chan uint64)
-	Check (uint64, uint64) (bool)
-	Fetch (int) bool
+type Treelike interface {
+	Insert(uint64, interface{})
+	Fetch(uint64) interface{}
+	Delete(uint64)
+	Iterate() chan uint64
 }
 
-type RandomTest struct {
-	seed int64
-	src rand.Source
-	tree *Btree
-	list [] uint64
-	kill map[uint64] int
-	killlist [] uint64
+type BtreeTest struct {
+	test *testing.T
+	tree Treelike 
+	reference map[uint64] interface{}	
 }
 
-func Generate ( order, insertions, deletions int, seed int64 )  * RandomTest {
-	test := new (RandomTest)
-	test.list = make ([] uint64, insertions, insertions)
-	test.kill = make (map[uint64] int)
-	test.killlist = make ([] uint64, deletions, deletions)
-	test.seed = seed
-	test.tree = Create(order)
-	test.src = rand.NewSource(test.seed)
+func (self *BtreeTest) Insert(key uint64, value interface{}) {
+	self.reference[key] = value
+	self.tree.Insert(key, value)
+}
+
+func (self *BtreeTest) Fetch(key uint64) interface{} {
+	value := self.tree.Fetch(key)
+	if (value != self.reference[key]) {
+		self.test.Fail()
+	}
+	return value
+}
+
+func (self *BtreeTest) Delete(key uint64) {
+	delete(self.reference, key)
+	self.tree.Delete(key)
 	
-	for i:=0; i<insertions; i++ {
-		test.list[i] = uint64(test.src.Int63())
+	verify := self.tree.Fetch(key) 
+	if (verify != nil) {
+		self.test.Fail()
+	}
+}
+
+func (self *BtreeTest) Iterate() chan uint64 {
+	rval := make (chan uint64) 
+	treechan := self.tree.Iterate()
+	checker := func() {
+		var lastkey uint64
+		var checklast bool = false
+		for key := range treechan {
+			if (checklast) {
+				if key < lastkey {
+					self.test.Fail()
+				}
+			}
+			checklast = true
+			lastkey = key
+			
+			_, ok := self.reference[key]
+			if (!ok) {
+				self.test.Fail()
+			}
+			
+			rval <- key
+		}
+		close(rval)
+	}
+	go checker()
+	return rval
+}
+
+func RandomTest(t *testing.T, tree Treelike, seed int64, iterations int, insertions int) {
+	deletions := 5 * insertions
+	t.Log("Random seed:", seed)
+
+	src := rand.NewSource(seed)
+	test := new (BtreeTest)
+	test.test = t
+	test.reference = make (map[uint64] interface{})
+	test.tree = tree
+
+	keys := make([] uint64, insertions*iterations, insertions*iterations);
+
+	for i:=0; i<iterations; i++ {
+
+		for j:=0; j<insertions; j++ {
+			key := uint64(src.Int63())
+			test.Insert(key, j)
+			keys[(insertions*i)+j] = key
+		}
+	
+		for j:=0; j<deletions; j++ {
+			listindex := uint(src.Int63()) % uint(insertions*(i+1))
+			test.Delete(keys[listindex])
+		}
 	}
 	
-	for i:=0; i<deletions; i++ {
-		listindex := uint(test.src.Int63()) % uint(insertions)
-		test.kill[test.list[listindex]] = 1 
-		test.killlist[i] = test.list[listindex] 
-	}
-	
-	return test	
-}
-
-func (self *RandomTest) Insert (i int) {
-	self.tree.Insert(self.list[i], i)
-}
-
-func (self *RandomTest) Delete (i int) {
-	self.tree.Delete(self.killlist[i])
-}
-
-func (self *RandomTest) Channel() (ch chan uint64) {
-	return self.tree.Iterate()
-}
-
-func (self *RandomTest) Check(current uint64, last uint64) (bool) {
-	return (current >= last)
-}
-
-func (self *RandomTest) Fetch (i int) bool {
-	got := self.tree.Fetch(self.list[i])
-	if (got == nil) {
-		_, ok := self.kill[self.list[i]]
-		return ok
-	}
-	return (got.(int) == int(i))
-}
-
-type LinearTest struct {
-	tree *Btree
-}
-
-func (self *LinearTest) Insert (i int) {
-	self.tree.Insert(uint64(i), i)
-}
-
-func (self *LinearTest) Delete (i int) {
-	self.tree.Delete(uint64(i))
-}
-
-func (self *LinearTest) Channel() (ch chan uint64) {
-	return self.tree.Iterate()
-}
-
-func (self *LinearTest) Check(current uint64, last uint64) (bool) {
-	return (current > last)
-}
-
-func (self *LinearTest) Fetch (i int) bool {
-	got := self.tree.Fetch(uint64(i))
-	if (got == nil || got.(int) == i) {
-		return true
-	}
-	return false
-}
-
-func doTest(insertions int, deletions int, test TreeTest) (bool,int32,int32,int32) {
-
-	start := time.Now().UnixNano();	
-	for i := 0; i<insertions; i++ {
-		test.Insert(i)
-	}
-	us := (time.Now().UnixNano() - start) / 1000
-	insrate := int32(((int64(insertions) * 1000000) / us) / 1000) 
-
-//	start := time.Now().UnixNano();	
-	for i := 0; i<deletions; i++ {
-		test.Delete(i)
-	}
-//	us := (time.Now().UnixNano() - start) / 1000
-//	delrate := int32(((int64(deletions) * 1000000) / us) / 1000) 
-
-	start = time.Now().UnixNano()
-	ch := test.Channel()
-	last := <- ch
+	ch := test.Iterate()
 	for key := range ch {
-		if ! test.Check(key,last) {
-			fmt.Println("Failed in Check(", key, last, ")")
-			return false,0,0,0
-		}
-		last = key
+		key = key + 1
 	}
-	us = (time.Now().UnixNano() - start) / 1000
-	iterrate := int32 (((int64(insertions) * 1000000) / us) / 1000) 
-
-	start = time.Now().UnixNano()
-	for i := 0; i<insertions; i++ {
-		if ! test.Fetch(i) {
-			fmt.Println("Failed in Fetch(", i, ")")
-			return false,0,0,0
-		}
-	}
-	us = (time.Now().UnixNano() - start) / 1000
-	fetchrate := int32 (((int64(insertions) * 1000000) / us) / 1000) 
-	return true,insrate,iterrate,fetchrate
+	
+	t.Log("stats size:", tree.(*Btree).Stats.Size)
+	t.Log("stats depth:", tree.(*Btree).Stats.Depth)
+	t.Log("stats nodes:", tree.(*Btree).Stats.Nodes)
+	t.Log("stats leaves:", tree.(*Btree).Stats.Leaves)
 }
 
-func TestAutoLinear4(t *testing.T) {
-	var test LinearTest	
-	test.tree = Create(4)
-	pass,_,_,_ := doTest(1000, 40, &test) 
-	if (!pass) {
-		t.Fail()
-	}
-}
-
-func TestAutoLinear8(t *testing.T) {
-	var test LinearTest	
-	test.tree = Create(8)
-	pass,_,_,_ := doTest(1000, 1000, &test) 
-	if (!pass) {
-		t.Fail()
-	}
-}
-
-func TestAutoLinear16(t *testing.T) {
-	var test LinearTest	
-	test.tree = Create(16)
-	pass,_,_,_ := doTest(1000, 40, &test) 
-	if (!pass) {
-		t.Fail()
-	}
-}
-
-func TestRandom4(t *testing.T) {
+func TestAutoRandom(t *testing.T) {
+	order := 4
+	iterations := 2
 	insertions := 1000
-	deletions := 100
+	tree := Create(order)
 	seed := time.Now().UnixNano()
-	test := Generate (4, insertions, deletions, seed)
-	t.Log("Random seed:", seed)
-	pass,_,_,_ := doTest(insertions, deletions, test)
-	if (!pass) {
-		t.Fail()
-	}
+	RandomTest(t, tree, seed, iterations, insertions)
 }
 
-func TestRandom8(t *testing.T) {
+func TestRandom(t *testing.T) {
+	orders := [] int {4, 8, 16, 32}
+	iterations := 10
 	insertions := 1000
-	deletions := 197
-	seed := time.Now().UnixNano()
-	test := Generate (8, insertions, deletions, seed)
-	t.Log("Random seed:", seed)
-	pass,_,_,_ := doTest(insertions, deletions, test)
-	if (!pass) {
-		t.Fail()
+	
+	for order := range orders {
+		tree := Create(order)
+		seed := time.Now().UnixNano()
+		RandomTest(t, tree, seed, iterations, insertions)
+		runtime.GC()
 	}
 }
 
-func TestRandom16(t *testing.T) {
-	insertions := 2000
-	deletions := 1999
-	seed := time.Now().UnixNano()
-	test := Generate (16, insertions, deletions, seed)
-	t.Log("Random seed:", seed)
-	pass,_,_,_ := doTest(insertions, deletions, test)
-	if (!pass) {
-		t.Fail()
-	}
-}
