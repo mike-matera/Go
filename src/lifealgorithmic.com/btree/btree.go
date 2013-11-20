@@ -1,7 +1,7 @@
 package btree
 
 import (
-	//"fmt"
+//	"fmt"
 )
 
 type Btree struct {
@@ -61,11 +61,6 @@ func (tree *Btree) split (self *Node) (* Node, Pair) {
 }
 
 func (tree *Btree) valueInsert (pos int, self * Node, value *Pair, link *Node) (* Node, Pair) {
-	//fmt.Printf("\ninsert: value: %d [%p]\n", value.Key, link)
-	//fmt.Print("insert:    is: ", self.Values, self.Nodes, "\n")
-
-	// Find the place
-	//pos := nodeFind(self, value.Key)
 	max := len(self.Values)
 
 	self.Values = append (self.Values, *value)
@@ -83,8 +78,6 @@ func (tree *Btree) valueInsert (pos int, self * Node, value *Pair, link *Node) (
 		}
 	}
 
-	//fmt.Print("insert:   now: ", self.Values, self.Nodes, "\n")
-	
 	// Split!
 	if len(self.Values) == tree.N+1 {
 		return tree.split(self)
@@ -198,7 +191,6 @@ func (tree * Btree) balance (parent *Node, pos int) {
 		// Balance results in two nodes
 		parent.Nodes[left] = joined
 		parent.Nodes[right], parent.Values[left] = tree.split(joined)
-
 	} else {
 		// Balance results in one node
 		copy(parent.Values[left:], parent.Values[left+1:])
@@ -207,18 +199,48 @@ func (tree * Btree) balance (parent *Node, pos int) {
 		copy(parent.Nodes[left:], parent.Nodes[left+1:])
 		parent.Nodes = parent.Nodes[0:len(parent.Nodes)-1]
 		parent.Nodes[left] = joined
+
+		if joined.Nodes == nil {
+			tree.Stats.Leaves--
+		}else{
+			tree.Stats.Nodes--
+		}
 	}
 }
 
-func (tree * Btree) del (index uint64, node *Node) int {
+func (tree * Btree) borrow (node *Node) (Pair, int) {
+	var rvalue Pair
+	if node.Nodes != nil {
+		// Keep descending
+		last := len(node.Nodes) - 1
+		borrow, remaining := tree.borrow(node.Nodes[last])
+		if remaining < (tree.N/2) {
+			// Under threshold, must balance
+			tree.balance(node, last)
+		}
+		rvalue = borrow
+	} else{
+		// Borrow last value
+		last := len(node.Values) - 1	
+		rvalue = node.Values[last]
+		node.Values = node.Values[0:last]
+	}	
+	return rvalue, len(node.Values);
+}
 
+func (tree * Btree) del (index uint64, node *Node) int {
 	pos := nodeFind(node, index)
 	
 	if pos > 0 && node.Values[pos-1].Key == index {
 		// Found the delete value
+		tree.Stats.Size--
 		if node.Nodes != nil {
-			// Lost median, will balance
-			tree.balance(node, pos)
+			// Lost median, must borrow
+			var remaining int
+			node.Values[pos-1], remaining = tree.borrow(node.Nodes[pos-1])
+			if remaining < (tree.N/2) {
+				tree.balance(node, pos-1)
+			}
 		}else{
 			// (leaf node) Kill the entry 
 			copy(node.Values[pos-1:], node.Values[pos:])
@@ -239,6 +261,7 @@ func (tree * Btree) del (index uint64, node *Node) int {
 func (tree *Btree) Delete(key uint64) {
 	if (tree.del(key, tree.root) == 0 && tree.root.Nodes != nil) {
 		tree.root = tree.root.Nodes[0]
+		tree.Stats.Depth--
 	}
 }
 
