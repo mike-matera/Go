@@ -4,7 +4,7 @@ import (
 //	"fmt"
 )
 
-type Btree struct {
+type BTree struct {
 	N int
 	root * Node
 	Stats struct {
@@ -16,8 +16,16 @@ type Btree struct {
 }
 
 type Pair struct {
-	Key uint64
-	Value interface{}
+	key uint64
+	value interface{}
+}
+
+func (self Pair) Key() uint64 {
+	return self.key
+}
+
+func (self Pair) Value() interface{} {
+	return self.value
 }
 
 type Node struct {
@@ -28,7 +36,7 @@ type Node struct {
 func nodeFind (node *Node, value uint64) int {
 	pos := len(node.Values)
 	for i, k := range node.Values {
-		if value < k.Key {
+		if value < k.key {
 			pos = i;
 			break
 		}
@@ -36,7 +44,7 @@ func nodeFind (node *Node, value uint64) int {
 	return pos
 }
 
-func (tree *Btree) split (self *Node) (* Node, Pair) {
+func (tree *BTree) split (self *Node) (* Node, Pair) {
 	var rnode *Node 
 	median := self.Values[tree.N/2]	
 
@@ -60,7 +68,7 @@ func (tree *Btree) split (self *Node) (* Node, Pair) {
 	return rnode, median;
 }
 
-func (tree *Btree) valueInsert (pos int, self * Node, value *Pair, link *Node) (* Node, Pair) {
+func (tree *BTree) valueInsert (pos int, self * Node, value *Pair, link *Node) (* Node, Pair) {
 	max := len(self.Values)
 
 	self.Values = append (self.Values, *value)
@@ -86,11 +94,11 @@ func (tree *Btree) valueInsert (pos int, self * Node, value *Pair, link *Node) (
 	return nil, Pair{};
 }
 
-func (tree * Btree) insert (self *Node, value *Pair) (*Node, Pair) {
+func (tree * BTree) insert (self *Node, value *Pair) (*Node, Pair) {
 	var rnode * Node = nil
 	var rval Pair
 	
-	pos := nodeFind(self, value.Key)
+	pos := nodeFind(self, value.key)
 
 	if self.Nodes != nil {
 		node, median := tree.insert(self.Nodes[pos], value)
@@ -103,7 +111,7 @@ func (tree * Btree) insert (self *Node, value *Pair) (*Node, Pair) {
 	return rnode, rval
 }
 
-func (tree * Btree) Insert (index uint64, value interface{}) {
+func (tree * BTree) Insert (index uint64, value interface{}) {
 	node, median := tree.insert(tree.root, &Pair{index, value})
 	if node != nil {
 		n := new(Node)
@@ -118,10 +126,10 @@ func (tree * Btree) Insert (index uint64, value interface{}) {
 	tree.Stats.Size++	
 }
 
-func (tree * Btree) fetch (index uint64, node *Node) (interface{}) {
+func (tree * BTree) fetch (index uint64, node *Node) (interface{}) {
 	pos := nodeFind(node, index)
 
-	if pos > 0 && node.Values[pos-1].Key == index {
+	if pos > 0 && node.Values[pos-1].key == index {
 		return node.Values[pos-1].Value
 	}
 	
@@ -132,25 +140,25 @@ func (tree * Btree) fetch (index uint64, node *Node) (interface{}) {
 	return nil
 }
 
-func (tree * Btree) Fetch (index uint64) (value interface{}) {
+func (tree * BTree) Fetch (index uint64) (value interface{}) {
 	return tree.fetch(index, tree.root)
 }
 
-func (tree * Btree) Iterate() chan uint64 {
+func (tree * BTree) Iterate() chan KeyValue {
 	var spilunk func (n *Node)
-	ch := make (chan uint64)
+	ch := make (chan KeyValue)
 
 	spilunk = func (n *Node) {
 		if n.Nodes != nil {
 			for i,next := range n.Nodes {
 				spilunk(next)
 				if i < len(n.Values) {
-					ch <- n.Values[i].Key
+					ch <- n.Values[i]
 				}
 			} 
 		}else{
 			for _,next := range n.Values {
-				ch <- next.Key
+				ch <- next
 			}
 		}
 	}		
@@ -161,7 +169,7 @@ func (tree * Btree) Iterate() chan uint64 {
 	return ch
 }
 
-func (tree * Btree) balance (parent *Node, pos int) {
+func (tree * BTree) balance (parent *Node, pos int) {
 
 	var left, right int	
 	if pos == 0 {
@@ -208,7 +216,7 @@ func (tree * Btree) balance (parent *Node, pos int) {
 	}
 }
 
-func (tree * Btree) borrow (node *Node) (Pair, int) {
+func (tree * BTree) borrow (node *Node) (Pair, int) {
 	var rvalue Pair
 	if node.Nodes != nil {
 		// Keep descending
@@ -228,10 +236,10 @@ func (tree * Btree) borrow (node *Node) (Pair, int) {
 	return rvalue, len(node.Values);
 }
 
-func (tree * Btree) del (index uint64, node *Node) int {
+func (tree * BTree) del (index uint64, node *Node) int {
 	pos := nodeFind(node, index)
 	
-	if pos > 0 && node.Values[pos-1].Key == index {
+	if pos > 0 && node.Values[pos-1].key == index {
 		// Found the delete value
 		tree.Stats.Size--
 		if node.Nodes != nil {
@@ -258,21 +266,21 @@ func (tree * Btree) del (index uint64, node *Node) int {
 	return len(node.Values)
 }
 
-func (tree *Btree) Delete(key uint64) {
+func (tree *BTree) Delete(key uint64) {
 	if (tree.del(key, tree.root) == 0 && tree.root.Nodes != nil) {
 		tree.root = tree.root.Nodes[0]
 		tree.Stats.Depth--
 	}
 }
 
-func Create(order int) * Btree {
-	tree := new (Btree)
+func NewBTree(order int) *BTree {
+	tree := new (BTree)
 	tree.N = order
 	tree.root = new(Node)
 	tree.root.Values = make ([] Pair, 0, tree.N+1)
-	tree.root.Nodes = nil;
+	tree.root.Nodes = nil
 	tree.Stats.Leaves = 1
 	tree.Stats.Nodes = 0
 	tree.Stats.Size = 0	
-	return tree	
+	return tree
 }
