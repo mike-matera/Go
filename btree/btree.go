@@ -4,9 +4,10 @@ import (
 //	"fmt"
 )
 
+/*
 type BTree struct {
 	N int
-	root * Node
+	root * bNode
 	Stats struct {
 		Size int
 		Depth int
@@ -28,12 +29,12 @@ func (self Pair) Value() interface{} {
 	return self.value
 }
 
-type Node struct {
+type bNode struct {
 	Values [] Pair
-	Nodes [] *Node
+	Nodes [] *bNode
 }
 
-func nodeFind (node *Node, value uint64) int {
+func nodeFind (node *bNode, value uint64) int {
 	pos := len(node.Values)
 	for i, k := range node.Values {
 		if value < k.key {
@@ -44,17 +45,17 @@ func nodeFind (node *Node, value uint64) int {
 	return pos
 }
 
-func (tree *BTree) split (self *Node) (* Node, Pair) {
-	var rnode *Node 
+func (tree *BTree) split (self *bNode) (* bNode, Pair) {
+	var rnode *bNode 
 	median := self.Values[tree.N/2]	
 
-	rnode = new(Node)
+	rnode = new(bNode)
 	rnode.Values = make ([] Pair, 0, tree.N+1)
 	rnode.Values = append(rnode.Values, self.Values[tree.N/2+1:]...)
 	self.Values = self.Values[0:tree.N/2]
 
 	if self.Nodes != nil {
-		rnode.Nodes = make ([] * Node, 0, tree.N+2)
+		rnode.Nodes = make ([] * bNode, 0, tree.N+2)
 		rnode.Nodes = append(rnode.Nodes, self.Nodes[tree.N/2+1:]...)
 		self.Nodes = self.Nodes[0:tree.N/2+1]
 		tree.Stats.Nodes++
@@ -68,7 +69,7 @@ func (tree *BTree) split (self *Node) (* Node, Pair) {
 	return rnode, median;
 }
 
-func (tree *BTree) valueInsert (pos int, self * Node, value *Pair, link *Node) (* Node, Pair) {
+func (tree *BTree) valueInsert (pos int, self * bNode, value *Pair, link *bNode) (* bNode, Pair) {
 	max := len(self.Values)
 
 	self.Values = append (self.Values, *value)
@@ -94,8 +95,8 @@ func (tree *BTree) valueInsert (pos int, self * Node, value *Pair, link *Node) (
 	return nil, Pair{};
 }
 
-func (tree * BTree) insert (self *Node, value *Pair) (*Node, Pair) {
-	var rnode * Node = nil
+func (tree * BTree) insert (self *bNode, value *Pair) (*bNode, Pair) {
+	var rnode * bNode = nil
 	var rval Pair
 	
 	pos := nodeFind(self, value.key)
@@ -111,12 +112,12 @@ func (tree * BTree) insert (self *Node, value *Pair) (*Node, Pair) {
 	return rnode, rval
 }
 
-func (tree * BTree) Insert (index uint64, value interface{}) {
+func (tree * BTree) Put (index uint64, value interface{}) {
 	node, median := tree.insert(tree.root, &Pair{index, value})
 	if node != nil {
-		n := new(Node)
+		n := new(bNode)
 		n.Values = make ([] Pair, 1, tree.N+1)
-		n.Nodes = make ([] * Node, 2, tree.N+2)
+		n.Nodes = make ([] * bNode, 2, tree.N+2)
 		n.Values[0] = median
 		n.Nodes[0] = tree.root
 		n.Nodes[1] = node
@@ -126,7 +127,7 @@ func (tree * BTree) Insert (index uint64, value interface{}) {
 	tree.Stats.Size++	
 }
 
-func (tree * BTree) fetch (index uint64, node *Node) (interface{}) {
+func (tree * BTree) fetch (index uint64, node *bNode) (interface{}) {
 	pos := nodeFind(node, index)
 
 	if pos > 0 && node.Values[pos-1].key == index {
@@ -140,15 +141,15 @@ func (tree * BTree) fetch (index uint64, node *Node) (interface{}) {
 	return nil
 }
 
-func (tree * BTree) Fetch (index uint64) (value interface{}) {
+func (tree * BTree) Get (index uint64) (value interface{}) {
 	return tree.fetch(index, tree.root)
 }
 
-func (tree * BTree) Iterate() chan KeyValue {
-	var spilunk func (n *Node)
-	ch := make (chan KeyValue)
+func (tree * BTree) Iterate() chan Indexable {
+	var spilunk func (n *bNode)
+	ch := make (chan Indexable)
 
-	spilunk = func (n *Node) {
+	spilunk = func (n *bNode) {
 		if n.Nodes != nil {
 			for i,next := range n.Nodes {
 				spilunk(next)
@@ -169,7 +170,7 @@ func (tree * BTree) Iterate() chan KeyValue {
 	return ch
 }
 
-func (tree * BTree) balance (parent *Node, pos int) {
+func (tree * BTree) balance (parent *bNode, pos int) {
 
 	var left, right int	
 	if pos == 0 {
@@ -181,12 +182,12 @@ func (tree * BTree) balance (parent *Node, pos int) {
 	}
 	
 	// Join neighbors...	
-	joined := new (Node)
+	joined := new (bNode)
 	leftnode := parent.Nodes[left]
 	rightnode := parent.Nodes[right]
 		
 	if leftnode.Nodes != nil {
-		joined.Nodes = make ([] *Node, 0, tree.N+2)
+		joined.Nodes = make ([] *bNode, 0, tree.N+2)
 		joined.Nodes = append(joined.Nodes, leftnode.Nodes...)
 		joined.Nodes = append(joined.Nodes, rightnode.Nodes...)
 	}
@@ -216,7 +217,7 @@ func (tree * BTree) balance (parent *Node, pos int) {
 	}
 }
 
-func (tree * BTree) borrow (node *Node) (Pair, int) {
+func (tree * BTree) borrow (node *bNode) (Pair, int) {
 	var rvalue Pair
 	if node.Nodes != nil {
 		// Keep descending
@@ -236,7 +237,7 @@ func (tree * BTree) borrow (node *Node) (Pair, int) {
 	return rvalue, len(node.Values);
 }
 
-func (tree * BTree) del (index uint64, node *Node) int {
+func (tree * BTree) del (index uint64, node *bNode) int {
 	pos := nodeFind(node, index)
 	
 	if pos > 0 && node.Values[pos-1].key == index {
@@ -276,7 +277,7 @@ func (tree *BTree) Delete(key uint64) {
 func NewBTree(order int) *BTree {
 	tree := new (BTree)
 	tree.N = order
-	tree.root = new(Node)
+	tree.root = new(bNode)
 	tree.root.Values = make ([] Pair, 0, tree.N+1)
 	tree.root.Nodes = nil
 	tree.Stats.Leaves = 1
@@ -284,3 +285,4 @@ func NewBTree(order int) *BTree {
 	tree.Stats.Size = 0	
 	return tree
 }
+*/
