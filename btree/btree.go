@@ -2,9 +2,9 @@ package btree
 
 import (
 //	"fmt"
+	"testing"
 )
 
-/*
 type BTree struct {
 	N int
 	root * bNode
@@ -112,8 +112,8 @@ func (tree * BTree) insert (self *bNode, value *Pair) (*bNode, Pair) {
 	return rnode, rval
 }
 
-func (tree * BTree) Put (index uint64, value interface{}) {
-	node, median := tree.insert(tree.root, &Pair{index, value})
+func (tree * BTree) Put (index interface{}, value interface{}) {
+	node, median := tree.insert(tree.root, &Pair{index.(uint64), value})
 	if node != nil {
 		n := new(bNode)
 		n.Values = make ([] Pair, 1, tree.N+1)
@@ -141,25 +141,25 @@ func (tree * BTree) fetch (index uint64, node *bNode) (interface{}) {
 	return nil
 }
 
-func (tree * BTree) Get (index uint64) (value interface{}) {
-	return tree.fetch(index, tree.root)
+func (tree * BTree) Get (index interface{}) (value interface{}) {
+	return tree.fetch(index.(uint64), tree.root)
 }
 
-func (tree * BTree) Iterate() chan Indexable {
+func (tree * BTree) Iterate() chan Entry {
 	var spilunk func (n *bNode)
-	ch := make (chan Indexable)
+	ch := make (chan Entry)
 
 	spilunk = func (n *bNode) {
 		if n.Nodes != nil {
 			for i,next := range n.Nodes {
 				spilunk(next)
 				if i < len(n.Values) {
-					ch <- n.Values[i]
+					ch <- Entry{n.Values[i].Key(), n.Values[i].Value()}
 				}
 			} 
 		}else{
 			for _,next := range n.Values {
-				ch <- next
+				ch <- Entry{next.Key(), next.Value()}
 			}
 		}
 	}		
@@ -267,8 +267,8 @@ func (tree * BTree) del (index uint64, node *bNode) int {
 	return len(node.Values)
 }
 
-func (tree *BTree) Delete(key uint64) {
-	if (tree.del(key, tree.root) == 0 && tree.root.Nodes != nil) {
+func (tree *BTree) Delete(key interface{}) {
+	if (tree.del(key.(uint64), tree.root) == 0 && tree.root.Nodes != nil) {
 		tree.root = tree.root.Nodes[0]
 		tree.Stats.Depth--
 	}
@@ -285,4 +285,6 @@ func NewBTree(order int) *BTree {
 	tree.Stats.Size = 0	
 	return tree
 }
-*/
+
+func (tree *BTree) Check(t *testing.T) {
+}

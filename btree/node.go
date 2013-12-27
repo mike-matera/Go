@@ -6,35 +6,28 @@ import (
 
 type NodeFactory interface {
 	NewNode() Node
-	NewLeaf() Leaf
-	Release(TreeNode)
+	NewLeaf() Node
+	Release(Node)
+}
+
+type Entry struct {
+	Key interface{}
+	Value interface{}
 }
 
 type Treelike interface {
-	Put(interface{})
+	Put(interface{}, interface{})
 	Get(interface{}) interface{}
 	Delete(interface{})
-	Iterate() chan interface{}
+	Iterate() chan Entry
 	Check(*testing.T) 
 }
 
-type TreeNode interface {
-	Size() int
-	Find(interface{}) int
-	Equals(int, interface{}) bool
+type Node interface {
+	isLeaf() bool
+	Find(interface{}) (int, bool, interface{})
 	Load(* MemNode) 
 	Store(* MemNode)
-}
-
-type Leaf interface {
-	TreeNode
-	Get(interface{}) interface{}
-	Dump(chan interface{})
-	Next() Leaf
-}
-
-type Node interface {
-	TreeNode
-	Next(interface{}) TreeNode
-	GetNode(int) TreeNode
+	Dump(chan Entry)
+	Next() Node
 }

@@ -7,16 +7,16 @@ import (
 
 type BPlusTree struct {
 	N int
-	root TreeNode
+	root Node
 	factory SimpleFactory
-	head Leaf
+	head Node
 }
 
 type MemNode struct {
-	ref TreeNode
-	neighbor TreeNode
-	Keys [] interface{}
-	Nodes [] interface{}
+	ref Node
+	neighbor Node
+	Entries [] Entry
+	Nodes [] Node
 }
 
 // Initialzie the tree
@@ -24,79 +24,55 @@ func NewBPlusTree(order int) (self *BPlusTree) {
 	self = new (BPlusTree)
 	self.N = order
 	self.root = self.factory.NewLeaf()
-	self.head = self.root.(Leaf)
+	self.head = self.root
 	return
 }
 
 // Fetch by key
 func (self *BPlusTree) Get(key interface{}) interface{} {
-	//fmt.Println("Get(" , key, ")")
-	var recurse func (TreeNode) interface{}
-	recurse = func(n TreeNode) (rval interface{}) {
-		switch node := n.(type) {
-			case Leaf:
-				rval = node.Get(key)
-
-			case Node:
-				rval = recurse(node.Next(key))
-		} 
-		return
+	var recurse func (Node) interface{}
+	recurse = func(n Node) (interface{}) {
+		_, _, next := n.Find(key)
+		if n.isLeaf() {
+			return next
+		}
+		return recurse(next.(Node))
 	}
 	return recurse(self.root)
 }
 
-
-func (self * BPlusTree) load(t TreeNode) * MemNode {
-	rval := new (MemNode)
-	size := t.Size()
-	rval.Keys = make ([] interface{}, size)
-	switch t.(type) {
-		case Node:
-			rval.Nodes = make([] interface{}, size+1)
-	}
-	rval.ref = t
-	t.Load(rval)
-	return rval
-}
-
-func (self * BPlusTree) store(m *MemNode) {
-	m.ref.Store(m)
-}
-
 // Insert a key/value
-func (self *BPlusTree) Put(item interface{}) {
-	//fmt.Println("Put(" , item, ")")
-	var recurse func(TreeNode) (* MemNode, interface{})
-	recurse = func (n TreeNode) (* MemNode, interface{}) {
-		pos := n.Find(item)
-		var insert_item interface{} 
-		var insert_node * MemNode
+func (self *BPlusTree) Put(key interface{}, value interface{}) {
+	var recurse func(Node) (* MemNode, *Entry)
+	recurse = func (n Node) (* MemNode, *Entry) {
+		pos, _, next := n.Find(key)
+		var temp_value * Entry = nil
+		var temp_node * MemNode = nil
 		
-		switch node := n.(type) {
-			case Leaf:
-				insert_item = item
-			case Node:
-				insert_node, insert_item = recurse(node.Next(item))
+		if n.isLeaf() {
+			temp_value = &Entry{key, value}
+		}else{
+			temp_node, temp_value = recurse(next.(Node))
 		}
 
-		if insert_item != nil {
-			temp := self.load(n)
-			defer self.store(temp)
-			self.insert(pos, temp, insert_item, insert_node)
-			if len(temp.Keys) > self.N {
-				return self.split(temp)
+		if temp_value != nil {
+			me := self.load(n)
+			defer self.store(me)
+			self.insert(pos, me, temp_value, temp_node)
+			if len(me.Entries) > self.N {
+				return self.split(me)
 			}
 		}
+		
 		return nil, nil
-	}
-	
+	}	
 	node, median := recurse(self.root)
 	if node != nil {
 		newroot := new (MemNode)
 		newroot.ref = self.factory.NewNode()
-		newroot.Keys = make([] interface{}, 1, 1)
-		newroot.Nodes = make([] interface{}, 2, 2)
-		newroot.Keys[0] = median
+		newroot.Entries = make([] Entry, 1, 1)
+		newroot.Nodes = make([] Node, 2, 2)
+		newroot.Entries[0] = *median
 		newroot.Nodes[0] = self.root
 		newroot.Nodes[1] = node.ref
 		self.store(newroot)
@@ -105,31 +81,27 @@ func (self *BPlusTree) Put(item interface{}) {
 }
 
 func (self *BPlusTree) Delete(key interface{}) {
-	//fmt.Println("Delete(" , key, ")")
-	var del func (n TreeNode) * MemNode
-	del = func(n TreeNode) (temp * MemNode) {
-		//fmt.Println("(del): <", key, ">", n)
-		pos := n.Find(key)
-		switch node := n.(type) {
-			case Leaf:
-				// (leaf node) Kill the entry 
-				if pos > 0 && node.Equals(pos-1, key) {
+	var del func (n Node) * MemNode
+	del = func(n Node) (temp * MemNode) {
+		pos, match, next := n.Find(key)
+		if n.isLeaf() {
+			// (leaf node) Kill the entry 
+			if match {
+				temp = self.load(n)
+				copy(temp.Entries[pos-1:], temp.Entries[pos:])
+				temp.Entries = temp.Entries[0:len(temp.Entries)-1]
+			}
+		}else{
+			updated := del(next.(Node))
+			if updated != nil {
+				if len(updated.Entries) < self.N/2 {
 					temp = self.load(n)
-					copy(temp.Keys[pos-1:], temp.Keys[pos:])
-					temp.Keys = temp.Keys[0:len(temp.Keys)-1]
+					self.pivot(pos, updated, temp)
+				}else{
+					self.store(updated)
 				}
-
-			case Node:
-				updated := del(node.Next(key))
-				if updated != nil {
-					if len(updated.Keys) < self.N/2 {
-						temp = self.pivot(pos, updated, node)
-					}else{
-						self.store(updated)
-					}
-				}
+			}
 		}
-		//fmt.Println("(del/done): <", key, ">", temp)
 		return 
 	}
 	modified := del(self.root)
@@ -137,7 +109,7 @@ func (self *BPlusTree) Delete(key interface{}) {
 		// Root was modified
 		if modified.Nodes != nil {
 			if len(modified.Nodes) == 1 {
-				self.root = modified.Nodes[0].(TreeNode)
+				self.root = modified.Nodes[0].(Node)
 				self.factory.Release(modified.ref)
 			}else{
 				self.store(modified)
@@ -148,77 +120,17 @@ func (self *BPlusTree) Delete(key interface{}) {
 	}
 }
 
-func (self *BPlusTree) pivot(pos int, child *MemNode, node Node) * MemNode {
-	root := self.load(node)
-	left := 0; right := 1
-	var leftnode, rightnode *MemNode 
-	if pos > 0 {
-		left = pos - 1
-		right = pos
-		rightnode = child
-		leftnode = self.load(node.GetNode(left))
-	}else{
-		leftnode = child
-		rightnode = self.load(node.GetNode(right))
-	}
-
-	// Join neighbors...	
-	joined := new (MemNode)
-	joined.ref = leftnode.ref
-	joined.neighbor = rightnode.neighbor
-			
-	if leftnode.Nodes != nil {
-		// Node join
-		joined.Nodes = make ([] interface{}, 0, self.N+1)
-		joined.Nodes = append(joined.Nodes, leftnode.Nodes...)
-		joined.Nodes = append(joined.Nodes, rightnode.Nodes...)
-		joined.Keys = make ([] interface{}, 0, self.N)
-		joined.Keys = append(joined.Keys, leftnode.Keys...)
-		joined.Keys = append(joined.Keys, root.Keys[left])
-		joined.Keys = append(joined.Keys, rightnode.Keys...)
-	}else{
-		// Leaf join
-		joined.Keys = make ([] interface{}, 0, self.N)
-		joined.Keys = append(joined.Keys, leftnode.Keys...)
-		joined.Keys = append(joined.Keys, rightnode.Keys...)
-	}
-
-	if len(joined.Keys) > self.N {
-		// Pivot results in two nodes
-		root.Nodes[left] = joined.ref
-		newnode, newmedian := self.split(joined)
-		root.Nodes[right] = newnode.ref
-		root.Keys[left] = newmedian
-				
-		self.store(joined)
-		self.store(rightnode)
-
-	} else {
-		// Pivot results in one node
-		copy(root.Keys[left:], root.Keys[left+1:])
-		root.Keys = root.Keys[0:len(root.Keys)-1]
-
-		copy(root.Nodes[left:], root.Nodes[left+1:])
-		root.Nodes = root.Nodes[0:len(root.Nodes)-1]
-		root.Nodes[left] = joined.ref
-		
-		self.store(joined)
-		self.factory.Release(rightnode.ref)		
-	}
-	
-	return root
-}
-
 func (self *BPlusTree) Check(t *testing.T)  {
-	/*
-	var checker func (n TreeNode)
-	checker = func (n TreeNode) {
-		switch node := n.(type) {
-			case Node:
-				temp := self.load(node)
-				for _,k := range temp.Nodes {
-					checker(k.(TreeNode))
-				}
+/*
+	//fmt.Println("-- BEGIN TREE CHECK --")
+	var checker func (n Node)
+	checker = func (n Node) {
+		//fmt.Println("check:", n)
+		if ! n.isLeaf() {
+			temp := self.load(n)
+			for _,k := range temp.Nodes {
+				checker(k)
+			}
 		}
 		size := n.Size()
 		if (size < self.N/2 && n != self.root) || size > self.N {
@@ -227,13 +139,11 @@ func (self *BPlusTree) Check(t *testing.T)  {
 		}
 	}
 	checker(self.root)
-	*/
-	return
+*/
 }
 
-func (self *BPlusTree) Iterate() chan interface{} {
-	//fmt.Println("Iterate()")
-	ch := make (chan interface{})
+func (self *BPlusTree) Iterate() chan Entry {
+	ch := make (chan Entry)
 	
 	go func() {
 		for working := self.head; working != nil; working = working.Next() {
@@ -244,12 +154,12 @@ func (self *BPlusTree) Iterate() chan interface{} {
 	return ch
 }
 
-func (self *BPlusTree) insert (pos int, node *MemNode, value interface{}, link *MemNode) {
-	max := len(node.Keys)
-	node.Keys = append(node.Keys, value)
+func (self *BPlusTree) insert (pos int, node *MemNode, value *Entry, link *MemNode) {
+	max := len(node.Entries)
+	node.Entries = append(node.Entries, *value)
 	if (pos < max) {
-		copy(node.Keys[pos+1:], node.Keys[pos:])
-		node.Keys[pos] = value
+		copy(node.Entries[pos+1:], node.Entries[pos:])
+		node.Entries[pos] = *value
 	}
 
 	if (link != nil) {
@@ -262,34 +172,105 @@ func (self *BPlusTree) insert (pos int, node *MemNode, value interface{}, link *
 	}
 }
 
-func (self *BPlusTree) split (node *MemNode) (*MemNode, interface{}) {
+func (self *BPlusTree) split (node *MemNode) (*MemNode, *Entry) {
 	var rnode *MemNode 
-	median := node.Keys[self.N/2]
+	median := node.Entries[self.N/2]
 
 	rnode = new(MemNode)
-	switch node.ref.(type) {
-		case Leaf:
-			rnode.ref = self.factory.NewLeaf()
+	if node.ref.isLeaf() {
+		rnode.ref = self.factory.NewLeaf()
 
-			rnode.Keys = make ([] interface{}, 0, self.N)	
-			rnode.Keys = append(rnode.Keys, node.Keys[self.N/2:]...)
-			node.Keys = node.Keys[0:self.N/2]
+		rnode.Entries = make ([] Entry, 0, self.N)	
+		rnode.Entries = append(rnode.Entries, node.Entries[self.N/2:]...)
+		node.Entries = node.Entries[0:self.N/2]
 
-			rnode.neighbor = node.neighbor
-			node.neighbor = rnode.ref
+		rnode.neighbor = node.neighbor
+		node.neighbor = rnode.ref
+	}else{
+		rnode.ref = self.factory.NewNode()
 
-		case Node:
-			rnode.ref = self.factory.NewNode()
+		rnode.Entries = make ([] Entry, 0, self.N)	
+		rnode.Entries = append(rnode.Entries, node.Entries[self.N/2+1:]...)
+		node.Entries = node.Entries[0:self.N/2]
 
-			rnode.Keys = make ([] interface{}, 0, self.N)	
-			rnode.Keys = append(rnode.Keys, node.Keys[self.N/2+1:]...)
-			node.Keys = node.Keys[0:self.N/2]
-
-			rnode.Nodes = make ([] interface{}, 0, self.N+2)
-			rnode.Nodes = append(rnode.Nodes, node.Nodes[self.N/2+1:]...)
-			node.Nodes = node.Nodes[0:self.N/2+1]
+		rnode.Nodes = make ([] Node, 0, self.N+2)
+		rnode.Nodes = append(rnode.Nodes, node.Nodes[self.N/2+1:]...)
+		node.Nodes = node.Nodes[0:self.N/2+1]
 	}
-	
+
 	self.store(rnode)	
-	return rnode, median;
+	return rnode, &median;
+}
+
+func (self *BPlusTree) pivot(pos int, child *MemNode, root *MemNode) {
+	left := 0; right := 1
+	var leftnode, rightnode *MemNode 
+	if pos > 0 {
+		left = pos - 1
+		right = pos
+		rightnode = child
+		leftnode = self.load(root.Nodes[left])
+	}else{
+		leftnode = child
+		rightnode = self.load(root.Nodes[right])
+	}
+
+	// Join neighbors...	
+	joined := new (MemNode)
+	joined.ref = leftnode.ref
+	joined.neighbor = rightnode.neighbor
+			
+	if leftnode.Nodes != nil {
+		// Node join
+		joined.Nodes = make ([] Node, 0, self.N+1)
+		joined.Nodes = append(joined.Nodes, leftnode.Nodes...)
+		joined.Nodes = append(joined.Nodes, rightnode.Nodes...)
+		joined.Entries = make ([] Entry, 0, self.N)
+		joined.Entries = append(joined.Entries, leftnode.Entries...)
+		joined.Entries = append(joined.Entries, root.Entries[left])
+		joined.Entries = append(joined.Entries, rightnode.Entries...)
+	}else{
+		// Leaf join
+		joined.Entries = make ([] Entry, 0, self.N)
+		joined.Entries = append(joined.Entries, leftnode.Entries...)
+		joined.Entries = append(joined.Entries, rightnode.Entries...)
+	}
+
+	if len(joined.Entries) > self.N {
+		// Pivot results in two nodes
+		root.Nodes[left] = joined.ref
+		newnode, newmedian := self.split(joined)
+		root.Nodes[right] = newnode.ref
+		root.Entries[left] = *newmedian
+				
+		self.store(joined)
+		self.store(rightnode)
+
+	} else {
+		// Pivot results in one node
+		copy(root.Entries[left:], root.Entries[left+1:])
+		root.Entries = root.Entries[0:len(root.Entries)-1]
+
+		copy(root.Nodes[left:], root.Nodes[left+1:])
+		root.Nodes = root.Nodes[0:len(root.Nodes)-1]
+		root.Nodes[left] = joined.ref
+		
+		self.store(joined)
+		self.factory.Release(rightnode.ref)		
+	}
+}
+
+func (self * BPlusTree) load(t Node) * MemNode {
+	rval := new (MemNode)
+	rval.Entries = make ([] Entry, 0, self.N)
+	if ! t.isLeaf() {
+		rval.Nodes = make([] Node, 0, self.N+1)
+	}
+	rval.ref = t
+	t.Load(rval)
+	return rval
+}
+
+func (self * BPlusTree) store(m *MemNode) {
+	m.ref.Store(m)
 }

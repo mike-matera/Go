@@ -6,141 +6,101 @@ import (
 
 type SimpleNode struct {
 	keys [] uint64
-	nodes [] TreeNode
-}
-
-type SimpleLeaf struct {
-	values [] Pair
-	neighbor *SimpleLeaf
-}
-
-type Pair struct {
-	Key uint64
-	Value int
+	nodes [] * SimpleNode
+	values [] int
+	neighbor * SimpleNode
 }
 
 type SimpleFactory struct {
 }
 
 func (self *SimpleFactory) NewNode() Node {
-	return new (SimpleNode)
+	n := new (SimpleNode)
+	n.nodes = make ([] *SimpleNode, 0)
+	n.values = nil
+	return n
 }
 
-func (self *SimpleFactory) NewLeaf() Leaf {
-	return new (SimpleLeaf)
+func (self *SimpleFactory) NewLeaf() Node {
+	n := new (SimpleNode)
+	n.values = make ([] int, 0)
+	n.nodes = nil
+	return n
 }
 
-func (self *SimpleFactory) Release(n TreeNode) {
+func (self *SimpleFactory) Release(n Node) {
 }
 
-func (self *SimpleLeaf) Size() int {
-	return len(self.values)
+func (self *SimpleNode) isLeaf() bool {
+	return (self.nodes == nil)
 }
 
-func (self *SimpleLeaf) Find(item interface{}) int { 
-	key := item.(Pair).Key
-	for i, k := range self.values {
-		if key < k.Key {
-			return i	
-		}
-	}
-	return len(self.values)
-}
-
-func (self *SimpleLeaf) Equals(index int, item interface{}) bool {
-	return (item.(Pair).Key == self.values[index].Key)
-}
-
-func (self *SimpleLeaf) Get(item interface{}) interface{} {
-	key := item.(Pair).Key
-	for _, k := range self.values {
-		if key == k.Key {
-			return k
-		}
-	}
-	return nil	
-}
-
-func (self *SimpleLeaf) Load(mem * MemNode) {
-	for i, k := range self.values {
-		mem.Keys[i] = k
-	}
-	mem.neighbor = self.neighbor
-}
-
-func (self *SimpleLeaf) Store(mem *MemNode) {
-	self.values = nil
-	for _, k := range mem.Keys {
-		self.values = append(self.values, k.(Pair))
-	}
-	self.neighbor = mem.neighbor.(*SimpleLeaf)
-}
-
-func (self *SimpleLeaf) Dump(c chan interface{}) {
-	for _, k := range self.values {
-		c <- k 
-	}
-}
-
-func (self *SimpleLeaf) Next() Leaf {
-	if self.neighbor == nil {
-		return nil
-	} 
-	return self.neighbor
-}
-
-func (self *SimpleNode) Size() int {
-	return len(self.keys)
-}
-
-func (self *SimpleNode) Find(item interface{}) int { 
-	key := item.(Pair).Key
+func (self *SimpleNode) Find(item interface{}) (int, bool, interface{}) { 
+	key := item.(uint64)
+	pos := len(self.keys)
 	for i, k := range self.keys {
 		if key < k {
-			return i	
+			pos = i
+			break
 		}
 	}
-	return len(self.keys)
-}
-
-func (self *SimpleNode) Equals(index int, item interface{}) bool {
-	return (item.(uint64) == self.keys[index])
-}
-
-func (self *SimpleNode) Next(item interface{}) TreeNode {
-	key := item.(Pair).Key
-	for i, k := range self.keys {
-		if key < k {
-			return self.nodes[i]
+	match := (pos > 0 && key == self.keys[pos-1])
+	if self.nodes != nil {
+		return pos, match, self.nodes[pos]
+	}else{
+		if match {
+			return pos, match, self.keys[pos-1]
+		}else{
+			return pos, match, nil
 		}
 	}
-	return self.nodes[len(self.keys)]
-}
-
-func (self *SimpleNode) GetNode(item int) TreeNode {
-	return self.nodes[item]
 }
 
 func (self *SimpleNode) Load(mem * MemNode) {
-	for i, k := range self.keys {
-		mem.Keys[i] = k
-		mem.Nodes[i] = self.nodes[i]
+	if self.nodes != nil {
+		for i, k := range self.keys {
+			mem.Entries = append(mem.Entries, Entry{k, nil})
+			mem.Nodes = append(mem.Nodes, self.nodes[i])
+		}
+		mem.Nodes = append(mem.Nodes, self.nodes[len(self.keys)])
+	}else{
+		for i, k := range self.keys {
+			mem.Entries = append(mem.Entries, Entry{k, self.values[i]})
+		}
+		mem.neighbor = self.neighbor
 	}
-	mem.Nodes[len(self.keys)] = self.nodes[len(self.keys)]
 }
 
-func (self *SimpleNode) Store(mem * MemNode) {
-	self.keys = nil
-	self.nodes = nil
-	for _, k := range mem.Keys {
-		switch v := k.(type) {
-			case uint64:
-				self.keys = append(self.keys, v)
-			case Pair:
-				self.keys = append(self.keys, v.Key)
+func (self *SimpleNode) Store(mem *MemNode) {
+	if self.nodes != nil {
+		self.keys = make([] uint64, 0, len(mem.Entries))
+		self.nodes = make([] *SimpleNode, 0, len(mem.Nodes))
+		for _, k := range mem.Entries {
+			self.keys = append(self.keys, k.Key.(uint64))
 		}
+		for _, n := range mem.Nodes {
+			self.nodes = append(self.nodes, n.(*SimpleNode))
+		}
+	}else{
+		self.keys = make([] uint64, 0, len(mem.Entries))
+		self.values = make([] int, 0, len(mem.Entries))
+		for _, k := range mem.Entries {
+			self.keys = append(self.keys, k.Key.(uint64))
+			self.values = append(self.values, k.Value.(int))
+		}
+		self.neighbor = mem.neighbor.(*SimpleNode)
 	}
-	for _, k := range mem.Nodes {
-		self.nodes = append(self.nodes, k.(TreeNode))
+}
+
+func (self *SimpleNode) Dump(c chan Entry) {
+	for i, k := range self.keys {
+		c <- Entry{k, self.values[i]}
 	}
+}
+
+func (self *SimpleNode) Next() Node {
+	if self.neighbor == nil {
+		return nil
+	}
+	return self.neighbor
 }
