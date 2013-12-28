@@ -54,9 +54,13 @@ func (self *BtreeTest) Iterate() chan Entry {
 			checklast = true
 			lastkey = entry.Key.(uint64)
 			
-			_, ok := self.reference[entry.Key.(uint64)]
+			refval, ok := self.reference[entry.Key.(uint64)]
 			if (!ok) {
 				self.test.Error("Iterate(): Iteration produced a false key:", entry.Key)
+			}
+			
+			if refval != entry.Value.(int) {
+				self.test.Error("Iterate(): Iteration discovered a false value:", entry.Value)
 			}
 			
 			rval <- entry
@@ -83,8 +87,12 @@ func RandomTest(t *testing.T, tree Treelike, seed int64, iterations int, inserti
 
 		for j:=0; j<insertions; j++ {
 			key := uint64(src.Int63())
+			keys[(insertions*i)+j] = key			
 			test.Put(key, j)
-			keys[(insertions*i)+j] = key
+			// Double insert every so often...
+			if (j % 100) == 10 {
+				test.Put(key, j+1)
+			}
 		}
 	
 		for j:=0; j<deletions; j++ {
@@ -105,7 +113,7 @@ func RandomTest(t *testing.T, tree Treelike, seed int64, iterations int, inserti
 	}
 }
 
-func TestAutoRandomBTree(t *testing.T) {
+func xTestAutoRandomBTree(t *testing.T) {
 	order := 4
 	iterations := 2
 	insertions := 1000
@@ -114,7 +122,7 @@ func TestAutoRandomBTree(t *testing.T) {
 	RandomTest(t, tree, seed, iterations, insertions)
 }
 
-func TestRandom(t *testing.T) {
+func xTestRandom(t *testing.T) {
 	orders := [] int {4, 8, 16, 32, 64, 128}
 	iterations := 10
 	insertions := 1000

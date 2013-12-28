@@ -45,7 +45,7 @@ func (self *BPlusTree) Get(key interface{}) interface{} {
 func (self *BPlusTree) Put(key interface{}, value interface{}) {
 	var recurse func(Node) (* MemNode, *Entry)
 	recurse = func (n Node) (* MemNode, *Entry) {
-		pos, _, next := n.Find(key)
+		pos, match, next := n.Find(key)
 		var temp_value * Entry = nil
 		var temp_node * MemNode = nil
 		
@@ -58,9 +58,14 @@ func (self *BPlusTree) Put(key interface{}, value interface{}) {
 		if temp_value != nil {
 			me := self.load(n)
 			defer self.store(me)
-			self.insert(pos, me, temp_value, temp_node)
-			if len(me.Entries) > self.N {
-				return self.split(me)
+			if ! match {
+				self.insert(pos, me, temp_value, temp_node)
+				if len(me.Entries) > self.N {
+					return self.split(me)
+				}
+			}else{
+				// replace
+				me.Entries[pos-1] = *temp_value
 			}
 		}
 		
