@@ -49,7 +49,7 @@ func (self *SimpleNode) Find(item interface{}) (int, bool, interface{}) {
 		return pos, match, self.nodes[pos]
 	}else{
 		if match {
-			return pos, match, self.keys[pos-1]
+			return pos, match, self.values[pos-1]
 		}else{
 			return pos, match, nil
 		}

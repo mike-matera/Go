@@ -16,6 +16,10 @@ type BtreeTest struct {
 func (self *BtreeTest) Put(key interface{}, value interface{}) {
 	self.reference[key.(uint64)] = value.(int)
 	self.tree.Put(key, value)
+	if self.reference[key.(uint64)] != self.tree.Get(key) {
+		self.test.Error("Put(): Mismatch:", self.tree.Get(key), "!=", self.reference[key.(uint64)])
+		self.test.FailNow()
+	} 
 	self.tree.Check(self.test)
 }
 
@@ -157,4 +161,38 @@ func TestRandomBplus(t *testing.T) {
 		seed := time.Now().UnixNano()
 		RandomTest(t, tree, seed, iterations, insertions)
 	}
+}
+
+func BenchmarkRandomInsertions(b *testing.B) {
+	order := 16
+	seed := time.Now().UnixNano()
+	src := rand.NewSource(seed)
+	tree := NewBPlusTree(order)
+
+    b.ResetTimer()
+	for j:=0; j<b.N; j++ {
+		tree.Put(uint64(src.Int63()), j)
+	}	
+}
+
+func BenchmarkRandomGet(b *testing.B) {
+	order := 16
+	seed := time.Now().UnixNano()
+	src := rand.NewSource(seed)
+	tree := NewBPlusTree(order)
+
+	for j:=0; j<b.N; j++ {
+		tree.Put(uint64(src.Int63()), j)
+	}	
+	
+    b.ResetTimer()
+	src = rand.NewSource(seed)
+	for j:=0; j<b.N; j++ {
+		key := uint64(src.Int63())
+		k := tree.Get(key)
+		if k != j {
+			b.Error("Mismatched value:", k)
+		}
+	}	
+	
 }

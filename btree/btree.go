@@ -72,12 +72,16 @@ func (tree *BTree) split (self *bNode) (* bNode, Pair) {
 func (tree *BTree) valueInsert (pos int, self * bNode, value *Pair, link *bNode) (* bNode, Pair) {
 	max := len(self.Values)
 
-	self.Values = append (self.Values, *value)
-	if (pos < max) {
-		copy(self.Values[pos+1:], self.Values[pos:])
-		self.Values[pos] = *value
+	if pos > 0 && self.Values[pos-1].Key() == value.Key() {
+		self.Values[pos-1] = *value
+	}else{
+		self.Values = append (self.Values, *value)
+		if (pos < max) {
+			copy(self.Values[pos+1:], self.Values[pos:])
+			self.Values[pos] = *value
+		}
 	}
-
+	
 	if (link != nil) {
 		pos = pos + 1
 		self.Nodes = append (self.Nodes, link)
