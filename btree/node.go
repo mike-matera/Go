@@ -5,8 +5,8 @@ import (
 )
 
 type NodeFactory interface {
-	NewNode() Node
-	NewLeaf() Node
+	NewNode(order int) Node
+	NewLeaf(order int) Node
 	Release(Node)
 }
 

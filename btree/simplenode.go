@@ -14,16 +14,18 @@ type SimpleNode struct {
 type SimpleFactory struct {
 }
 
-func (self *SimpleFactory) NewNode() Node {
+func (self *SimpleFactory) NewNode(order int) Node {
 	n := new (SimpleNode)
-	n.nodes = make ([] *SimpleNode, 0)
+	n.keys = make ([] uint64, 0, order)
+	n.nodes = make ([] *SimpleNode, 0, order)
 	n.values = nil
 	return n
 }
 
-func (self *SimpleFactory) NewLeaf() Node {
+func (self *SimpleFactory) NewLeaf(order int) Node {
 	n := new (SimpleNode)
-	n.values = make ([] int, 0)
+	n.keys = make ([] uint64, 0, order)
+	n.values = make ([] int, 0, order)
 	n.nodes = nil
 	return n
 }
@@ -72,9 +74,9 @@ func (self *SimpleNode) Load(mem * MemNode) {
 }
 
 func (self *SimpleNode) Store(mem *MemNode) {
+	self.keys = nil
 	if self.nodes != nil {
-		self.keys = make([] uint64, 0, len(mem.Entries))
-		self.nodes = make([] *SimpleNode, 0, len(mem.Nodes))
+		self.nodes = self.nodes[:0]
 		for _, k := range mem.Entries {
 			self.keys = append(self.keys, k.Key.(uint64))
 		}
@@ -82,8 +84,7 @@ func (self *SimpleNode) Store(mem *MemNode) {
 			self.nodes = append(self.nodes, n.(*SimpleNode))
 		}
 	}else{
-		self.keys = make([] uint64, 0, len(mem.Entries))
-		self.values = make([] int, 0, len(mem.Entries))
+		self.values = self.values[:0]
 		for _, k := range mem.Entries {
 			self.keys = append(self.keys, k.Key.(uint64))
 			self.values = append(self.values, k.Value.(int))

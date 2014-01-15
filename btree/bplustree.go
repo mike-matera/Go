@@ -23,7 +23,7 @@ type MemNode struct {
 func NewBPlusTree(order int) (self *BPlusTree) {
 	self = new (BPlusTree)
 	self.N = order
-	self.root = self.factory.NewLeaf()
+	self.root = self.factory.NewLeaf(order)
 	self.head = self.root
 	return
 }
@@ -74,7 +74,7 @@ func (self *BPlusTree) Put(key interface{}, value interface{}) {
 	node, median := recurse(self.root)
 	if node != nil {
 		newroot := new (MemNode)
-		newroot.ref = self.factory.NewNode()
+		newroot.ref = self.factory.NewNode(self.N)
 		newroot.Entries = make([] Entry, 1, 1)
 		newroot.Nodes = make([] Node, 2, 2)
 		newroot.Entries[0] = *median
@@ -183,7 +183,7 @@ func (self *BPlusTree) split (node *MemNode) (*MemNode, *Entry) {
 
 	rnode = new(MemNode)
 	if node.ref.isLeaf() {
-		rnode.ref = self.factory.NewLeaf()
+		rnode.ref = self.factory.NewLeaf(self.N)
 
 		rnode.Entries = make ([] Entry, 0, self.N)	
 		rnode.Entries = append(rnode.Entries, node.Entries[self.N/2:]...)
@@ -192,7 +192,7 @@ func (self *BPlusTree) split (node *MemNode) (*MemNode, *Entry) {
 		rnode.neighbor = node.neighbor
 		node.neighbor = rnode.ref
 	}else{
-		rnode.ref = self.factory.NewNode()
+		rnode.ref = self.factory.NewNode(self.N)
 
 		rnode.Entries = make ([] Entry, 0, self.N)	
 		rnode.Entries = append(rnode.Entries, node.Entries[self.N/2+1:]...)

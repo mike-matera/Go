@@ -5,7 +5,52 @@ import (
 	"runtime"
 	"time"
 	"math/rand"
+	"github.com/cznic/b"
 )
+
+type CznicAdapter struct {
+	tree *b.Tree	
+}
+
+func cmp(a, b uint64) int {
+	if a < b {
+		return -1
+	}else if (a > b) {
+		return 1
+	}else{
+		return 0
+	}
+}
+
+func CznicTree() *CznicAdapter {
+	rval := new (CznicAdapter)
+	rval.tree = b.TreeNew(cmp)
+	return rval
+}
+	
+func (self *CznicAdapter) Put(key interface{}, value interface{}) {
+	self.tree.Set(key.(uint64), value.(int))
+}
+
+func (self *CznicAdapter) Get(key interface{}) interface{} {
+	rval,okay := self.tree.Get(key.(uint64)) 
+	if okay {
+		return rval
+	}else{
+		return nil
+	}
+}
+
+func (self *CznicAdapter) Delete(key interface{}) {
+	self.tree.Delete(key.(uint64))
+}
+
+func (self *CznicAdapter) Iterate() chan Entry {
+	return nil
+}
+
+func (self *CznicAdapter) Check(t *testing.T) {
+}
 
 type BtreeTest struct {
 	test *testing.T
@@ -46,6 +91,9 @@ func (self *BtreeTest) Delete(key interface{}) {
 func (self *BtreeTest) Iterate() chan Entry {
 	rval := make (chan Entry) 
 	treechan := self.tree.Iterate()
+	if treechan == nil {
+		return nil
+	}
 	checker := func() {
 		var lastkey uint64
 		var checklast bool = false
@@ -106,14 +154,19 @@ func RandomTest(t *testing.T, tree Treelike, seed int64, iterations int, inserti
 	}
 	
 	ch := test.Iterate()
-	count := 0
-	dummy := uint64(0)
-	for key := range ch {
-		dummy += key.Key.(uint64)
-		count++
-	}
-	if count == 0 {
-		test.test.Error("Iteration produced no items!")
+	if ch != nil {
+		count := 0
+		for entry := range ch {
+			value := test.reference[entry.Key.(uint64)]
+			if (value != entry.Value.(int)) {
+				t.Error("Iterate(): Iteration discovered a false value:", entry.Value)
+				t.FailNow()
+			}
+			count += 1
+		}
+		if count == 0 {
+			test.test.Error("Iteration produced no items!")
+		}
 	}
 }
 
@@ -163,11 +216,37 @@ func TestRandomBplus(t *testing.T) {
 	}
 }
 
-func BenchmarkRandomInsertions(b *testing.B) {
-	order := 16
+func TestRandomCznic(t *testing.T) {
+	iterations := 10
+	insertions := 1000
+	
+	tree := CznicTree()
+	seed := time.Now().UnixNano()
+	RandomTest(t, tree, seed, iterations, insertions)
+}
+
+func SetupBenchmark(b *testing.B, tree Treelike) (int64, rand.Source) {
+	prefill := 3000000
 	seed := time.Now().UnixNano()
 	src := rand.NewSource(seed)
+
+	/*
+	if prefill < b.N {
+		prefill = b.N
+	}
+	*/
+	
+	for j:=0; j<prefill; j++ {
+		tree.Put(uint64(src.Int63()), j)
+	}	
+
+	return seed, src
+}
+
+func BenchmarkRandomPut(b *testing.B) {
+	order := 128
 	tree := NewBPlusTree(order)
+	_, src := SetupBenchmark(b, tree)
 
     b.ResetTimer()
 	for j:=0; j<b.N; j++ {
@@ -176,23 +255,82 @@ func BenchmarkRandomInsertions(b *testing.B) {
 }
 
 func BenchmarkRandomGet(b *testing.B) {
-	order := 16
-	seed := time.Now().UnixNano()
-	src := rand.NewSource(seed)
+	order := 128
 	tree := NewBPlusTree(order)
+	seed, src := SetupBenchmark(b, tree)
 
-	for j:=0; j<b.N; j++ {
-		tree.Put(uint64(src.Int63()), j)
-	}	
-	
     b.ResetTimer()
 	src = rand.NewSource(seed)
 	for j:=0; j<b.N; j++ {
-		key := uint64(src.Int63())
-		k := tree.Get(key)
-		if k != j {
-			b.Error("Mismatched value:", k)
-		}
-	}	
-	
+		tree.Get(uint64(src.Int63()))
+	}
 }
+
+func BenchmarkRandomDelete(b *testing.B) {
+	order := 128
+	tree := NewBPlusTree(order)
+	seed, src := SetupBenchmark(b, tree)
+
+    b.ResetTimer()
+	src = rand.NewSource(seed)
+	for j:=0; j<b.N; j++ {
+		tree.Delete(uint64(src.Int63()))
+	}
+}
+
+/*
+func BenchmarkIteration(b *testing.B) {
+	order := 128
+	tree := NewBPlusTree(order)
+	SetupBenchmark(b, tree)
+
+    b.ResetTimer()
+	ch := tree.Iterate()
+	for _ = range (ch) {
+	}
+}
+*/
+
+func BenchmarkCznicRandomPut(b *testing.B) {
+	tree := CznicTree()
+	_, src := SetupBenchmark(b, tree)
+
+    b.ResetTimer()
+	for j:=0; j<b.N; j++ {
+		tree.Put(uint64(src.Int63()), j)
+	}	
+}
+
+func BenchmarkCznicRandomGet(b *testing.B) {
+	tree := CznicTree()
+	seed, src := SetupBenchmark(b, tree)
+
+    b.ResetTimer()
+	src = rand.NewSource(seed)
+	for j:=0; j<b.N; j++ {
+		tree.Get(uint64(src.Int63()))
+	}
+}
+
+func BenchmarkCznicRandomDelete(b *testing.B) {
+	tree := CznicTree()
+	seed, src := SetupBenchmark(b, tree)
+
+    b.ResetTimer()
+	src = rand.NewSource(seed)
+	for j:=0; j<b.N; j++ {
+		tree.Delete(uint64(src.Int63()))
+	}
+}
+
+/*
+func BenchmarkCznicIteration(b *testing.B) {
+	tree := CznicTree()
+	_, src := SetupBenchmark(b, tree)
+
+    b.ResetTimer()
+	ch := tree.Iterate()
+	for _ = range (ch) {
+	}
+}
+*/
